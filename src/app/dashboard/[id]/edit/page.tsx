@@ -3,26 +3,18 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { ArrowLeftIcon, SaveIcon, Trash2Icon } from 'lucide-react';
+import { ArrowLeftIcon, Loader2 } from 'lucide-react';
 import Link from 'next/link';
-
-type Note = {
-  id: string;
-  title: string;
-  content: string;
-  color: string;
-};
+import { toast } from 'sonner';
+import { NoteForm } from '@/components/note-form';
+import { Button } from '@/components/ui/button';
+import { Note, NoteUpdate } from '@/types/note';
+import { noteService } from '@/lib/services/noteService';
 
 export default function EditNotePage() {
-  const [note, setNote] = useState<Note>({
-    id: '',
-    title: '',
-    content: '',
-    color: 'yellow',
-  });
+  const [note, setNote] = useState<Note | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { user } = useAuth();
   const router = useRouter();
   const { id } = useParams();
@@ -34,203 +26,144 @@ export default function EditNotePage() {
     }
 
     const fetchNote = async () => {
+      if (!id) return;
+      
       try {
         setLoading(true);
-        // TODO: Fetch note from database
-        // This is mock data for now
-        await new Promise(resolve => setTimeout(resolve, 500));
+        const fetchedNote = await noteService.getNoteById(id as string, user.id);
         
-        // Mock note data
-        const mockNote: Note = {
-          id: id as string,
-          title: 'Sample Note',
-          content: 'This is a sample note. Edit it to update the content.',
-          color: 'yellow',
-        };
+        if (!fetchedNote) {
+          toast.error('Note not found');
+          router.push('/dashboard');
+          return;
+        }
         
-        setNote(mockNote);
-      } catch (err) {
-        console.error('Error fetching note:', err);
-        setError('Failed to load note. Please try again.');
+        setNote(fetchedNote);
+      } catch (error) {
+        console.error('Error fetching note:', error);
+        toast.error('Failed to load note. Please try again.');
+        router.push('/dashboard');
       } finally {
         setLoading(false);
       }
     };
 
-    if (id) {
-      fetchNote();
-    }
+    fetchNote();
   }, [id, user, router]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!note.title.trim()) {
-      setError('Title is required');
-      return;
-    }
-
-    setSaving(true);
-    setError('');
+  const handleSubmit = async (data: { title: string; content: string; color: string }) => {
+    if (!user || !note) return;
 
     try {
-      // TODO: Implement update in database
-      console.log('Updating note:', note);
+      setIsSubmitting(true);
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Update the note in the database
+      await noteService.updateNote(
+        note.id,
+        {
+          title: data.title,
+          content: data.content,
+          color: data.color as NoteUpdate['color'],
+        },
+        user.id
+      );
       
-      // Redirect to note detail after save
+      toast.success('Note updated successfully');
       router.push(`/dashboard/${note.id}`);
-    } catch (err) {
-      console.error('Error updating note:', err);
-      setError('Failed to update note. Please try again.');
+    } catch (error) {
+      console.error('Error updating note:', error);
+      toast.error('Failed to update note. Please try again.');
     } finally {
-      setSaving(false);
+      setIsSubmitting(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!note.id) return;
+    if (!note || !user) return;
     
     if (!confirm('Are you sure you want to delete this note? This action cannot be undone.')) {
       return;
     }
 
     try {
-      // TODO: Implement delete from database
-      console.log('Deleting note:', note.id);
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Redirect to dashboard after delete
+      await noteService.deleteNote(note.id, user.id);
+      toast.success('Note deleted successfully');
       router.push('/dashboard');
-    } catch (err) {
-      console.error('Error deleting note:', err);
-      setError('Failed to delete note. Please try again.');
+    } catch (error) {
+      console.error('Error deleting note:', error);
+      toast.error('Failed to delete note. Please try again.');
     }
   };
 
-  const colors = [
-    { name: 'Yellow', value: 'yellow', bg: 'bg-yellow-100', text: 'text-yellow-800' },
-    { name: 'Blue', value: 'blue', bg: 'bg-blue-100', text: 'text-blue-800' },
-    { name: 'Green', value: 'green', bg: 'bg-green-100', text: 'text-green-800' },
-    { name: 'Red', value: 'red', bg: 'bg-red-100', text: 'text-red-800' },
-    { name: 'Purple', value: 'purple', bg: 'bg-purple-100', text: 'text-purple-800' },
-  ];
-
-  if (loading) {
+  if (loading || !note) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow">
+    <div className="min-h-screen bg-background">
+      <header className="bg-card shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center">
             <Link
               href={`/dashboard/${note.id}`}
-              className="inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700"
+              className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
             >
               <ArrowLeftIcon className="mr-2 h-4 w-4" />
               Cancel
             </Link>
             <div className="flex space-x-3">
-              <button
-                type="button"
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={handleDelete}
-                className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                disabled={isSubmitting}
+                className="text-destructive hover:text-destructive-foreground hover:bg-destructive/90"
               >
-                <Trash2Icon className="mr-2 h-4 w-4" />
-                Delete
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={saving}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                Delete Note
+              </Button>
+              <Button 
+                type="submit" 
+                form="note-form"
+                disabled={isSubmitting}
               >
-                <SaveIcon className="mr-2 h-4 w-4" />
-                {saving ? 'Saving...' : 'Save Changes'}
-              </button>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Changes'
+                )}
+              </Button>
             </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
-        {error && (
-          <div className="mb-6 bg-red-50 border-l-4 border-red-400 p-4">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm text-red-700">{error}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="space-y-6">
           <div>
-            <label htmlFor="title" className="block text-sm font-medium text-gray-700">
-              Title
-            </label>
-            <div className="mt-1">
-              <input
-                type="text"
-                id="title"
-                className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                placeholder="Note title"
-                value={note.title}
-                onChange={(e) => setNote({ ...note, title: e.target.value })}
-              />
-            </div>
+            <h1 className="text-2xl font-bold tracking-tight">Edit Note</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Make changes to your note
+            </p>
           </div>
-
-          <div>
-            <label htmlFor="content" className="block text-sm font-medium text-gray-700">
-              Content
-            </label>
-            <div className="mt-1">
-              <textarea
-                id="content"
-                rows={15}
-                className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border border-gray-300 rounded-md"
-                placeholder="Start writing your note here..."
-                value={note.content}
-                onChange={(e) => setNote({ ...note, content: e.target.value })}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Color
-            </label>
-            <div className="flex space-x-2">
-              {colors.map((color) => (
-                <button
-                  key={color.value}
-                  type="button"
-                  onClick={() => setNote({ ...note, color: color.value })}
-                  className={`w-8 h-8 rounded-full ${color.bg} ${
-                    note.color === color.value ? 'ring-2 ring-offset-2 ring-indigo-500' : ''
-                  }`}
-                  title={color.name}
-                />
-              ))}
-            </div>
-          </div>
-        </form>
+          
+          <NoteForm 
+            initialData={{
+              title: note.title,
+              content: note.content,
+              color: note.color as 'yellow' | 'blue' | 'green' | 'red' | 'purple',
+            }}
+            onSubmit={handleSubmit}
+            isLoading={isSubmitting}
+            onCancel={() => router.push(`/dashboard/${note.id}`)}
+          />
+        </div>
       </main>
     </div>
   );
